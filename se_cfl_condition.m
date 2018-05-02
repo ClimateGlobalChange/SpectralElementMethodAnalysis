@@ -10,8 +10,9 @@ function max_courant = se_cfl_condition(npts, temporal_scheme, nuorder, nuvalue,
 %    temporal_scheme - Temporal integration scheme from time_discrete_M
 %    nuorder - Order of diffusion to apply (must be even)
 %    nuvalue - Non-dimensional diffusion coefficient (scalar or vector)
-%    nutype - 1 (use norder applications of derivative operator for diffusion)
-%             2 [default] (use norder/2 applications of laplacian operator for diffusion)
+%    nutype - 1 [default] (use laplacian operator for diffusion)
+%           - 2 (use derivative operator for diffusion)
+%           - 3 (use Legendre filter applied to shortest wavelength mode)
 %    numethod - 'inline' [default] (apply diffusion at each RK substage)
 %             - 'split' (apply diffusion after RK cycle)
 %
@@ -52,8 +53,8 @@ end
 if (~exist('nutype'))
     nutype = 2;
 end
-if ((nutype ~= 1) && (nutype ~= 2))
-    error('nutype argument must take value 1 or 2');
+if ((nutype ~= 1) && (nutype ~= 2) && (nutype ~= 3))
+    error('nutype argument must take value 1, 2, or 3');
 end
 if (~exist('numethod'))
     numethod = 'inline';
@@ -80,9 +81,23 @@ for n = 1:length(nuvalue)
 
         % Inline diffusion
         if (strcmp(numethod, 'inline'))
-            M = se_advection_matrix_exact(npts, theta, nuorder, nuvalue(n), nutype);
-            for j = 1:length(theta)
-                M(:,:,j) = time_discrete_M(temporal_scheme, M(:,:,j), dt);
+            if ((nutype == 1) || (nutype == 2))
+                M = se_advection_matrix_exact(npts, theta, nuorder, nuvalue(n), nutype);
+                for j = 1:length(theta)
+                    M(:,:,j) = time_discrete_M(temporal_scheme, M(:,:,j), dt);
+                end
+                
+            elseif (nutype == 3)
+                legcoeffs = ones(npts,1);
+                legcoeffs(npts) = legcoeffs(npts) - nuvalue;
+                [B1,B2,B3] = se_legfilter_matrices(npts, legcoeffs);
+
+                M = se_advection_matrix_exact(npts, theta);
+                for j = 1:length(theta)
+                    F(:,:,j) = B1 * exp(-1i * theta(j)) + B2 + B3 * exp(1i * theta(j));
+                    M(:,:,j) = (F(:,:,j) - eye(npts-1)) / dt + M(:,:,j);
+                    M(:,:,j) = time_discrete_M(temporal_scheme, M(:,:,j), dt);
+                end
             end
         end
 
@@ -108,6 +123,17 @@ for n = 1:length(nuvalue)
                 for j = 1:length(theta)
                     D = D1 * exp(-1i * theta(j)) + D2 + D3 * exp(1i * theta(j));
                     M(:,:,j) = (eye(npts-1) - dt * (-1)^(nuorder/2) * nuvalue(n) * D^(nuorder/2)) * M(:,:,j);
+                end
+            end
+
+            % Diffusion via Boyd-Vandeven filter
+            if (nutype == 3)
+                lfcoeffs = ones(npts,1);
+                lfcoeffs(npts) = lfcoeffs(npts) - nuvalue;
+                [B1,B2,B3] = se_legfilter_matrices(npts, lfcoeffs);
+                for j = 1:length(theta)
+                    F(:,:,j) = B1 * exp(-1i * theta(j)) + B2 + B3 * exp(1i * theta(j));
+                    M(:,:,j) = F(:,:,j) * M(:,:,j);
                 end
             end
         end

@@ -1,7 +1,7 @@
-function se_plot_evals_dt(npts, temporal_scheme, cfl, nuorder, nuvalue, nutype, numethod, theta_numpts)
-% se_plot_evals - Plot the eigenvalues of the fully discrete evolution matrix
-% for the 1D non-dimensionalized advection equation with spectral element
-% discretization.
+function [theta_ext, pevals] = se_plot_evals_dt(npts, temporal_scheme, cfl, nuorder, nuvalue, nutype, numethod, theta_numpts)
+% se_plot_evals - Plot the reconstructed eigenvalues of the fully discrete
+% evolution matrix for the 1D non-dimensionalized advection equation with
+% spectral element discretization.
 %
 % Syntax:  se_plot_evals_dt(npts, temporal_scheme, cfl, nuorder, nuvalue, nutype)
 %
@@ -11,9 +11,13 @@ function se_plot_evals_dt(npts, temporal_scheme, cfl, nuorder, nuvalue, nutype, 
 %    cfl - Non-dimensional Courant number to use (c * dt / dx), where
 %          dx is the average distance between degrees of freedom
 %    nuorder - Order of diffusion to apply (must be even)
-%    nuvalue - Non-dimensional diffusion coefficient
-%    nutype - 1 (use norder applications of derivative operator for diffusion)
-%             2 [default] (use norder/2 applications of laplacian operator for diffusion)
+%    nuvalue - Non-dimensional diffusion coefficient(s)
+%    nutype - 1 [default] (use laplacian operator for diffusion)
+%           - 2 (use derivative operator for diffusion)
+%           - 3 (use Legendre filter with scalar nuvalue applied to shortest
+%                shortest wavelength or vector nuvalue coefficients)
+%           - 4 (use order nuorder Boyd-Vandeven filter with
+%                strength nuvalue(1) and lag nuvalue(2))
 %    numethod - 'inline' (apply hyperdiffusion as part of each RK subcycle)
 %             - 'split' (apply hyperdiffusion with FE method after all RK subcycles)
 %    theta_numpts - Number of values of theta to use in the plot (default 10000)
@@ -43,14 +47,16 @@ end
 if (mod(nuorder, 2) ~= 0)
     error('nuorder argument must be even');
 end
-if (nuvalue < 0)
-    disp('WARNING: anti-diffusion being applied in calculation');
+if (isscalar(nuvalue))
+    if (nuvalue < 0)
+        disp('WARNING: anti-diffusion being applied in calculation');
+    end
 end
 if (~exist('nutype'))
     nutype = 1;
 end
-if ((nutype ~= 1) && (nutype ~= 2))
-    error('nutype argument must take value 1 or 2');
+if ((nutype ~= 1) && (nutype ~= 2) && (nutype ~= 3) && (nutype ~= 4))
+    error('nutype argument must take value 1, 2, 3, or 4');
 end
 if (~exist('numethod'))
     numethod = 'inline';
@@ -78,27 +84,65 @@ cfl = cfl / (npts-1);
 % uniformly distribute theta
 theta = [0:theta_numpts-1]/(theta_numpts-1) * 2 * pi;
 
-% Generate SE derivative matrices
-[D1,D2,D3] = se_derivative_matrices(npts);
-
 % Compute advection and hyperdiffusion operators
 Dx = zeros(npts-1, npts-1, length(theta));
 HDiff = zeros(npts-1, npts-1, length(theta));
 
-% With derivative-operator diffusion
-if (nutype == 2)
+% First derivative used for computing advection operator
+[D1,D2,D3] = se_derivative_matrices(npts);
+for j = 1:length(theta)
+    Dx(:,:,j) = D1 * exp(-1i * theta(j)) + D2 + D3 * exp(1i * theta(j));
+end
+
+% With laplacian-operator diffusion
+if (nutype == 1)
+    if (~isscalar(nuvalue))
+        error('nuvalue argument must be a scalar');
+    end
+    [L1,L2,L3] = se_laplacian_matrices(npts);
     for j = 1:length(theta)
-    	Dx(:,:,j) = D1 * exp(-1i * theta(j)) + D2 + D3 * exp(1i * theta(j));
+        HDiff(:,:,j) = L1 * exp(-1i * theta(j)) + L2 + L3 * exp(1i * theta(j));
+        HDiff(:,:,j) = - (-1)^(nuorder/2) * nuvalue * HDiff(:,:,j)^(nuorder/2);
+    end
+    
+% With derivative-operator diffusion
+elseif (nutype == 2)
+    if (~isscalar(nuvalue))
+        error('nuvalue argument must be a scalar');
+    end
+    for j = 1:length(theta)
         HDiff(:,:,j) = - (-1)^(nuorder/2) * nuvalue * Dx(:,:,j)^(nuorder);
     end
 
-% With laplacian-operator diffusion
-elseif (nutype == 1)
-    [L1,L2,L3] = se_laplacian_matrices(npts);
+% With Legendre mode filter applied to shortest wavelength
+elseif (nutype == 3)
+    legcoeffs = ones(npts,1);
+    if (isscalar(nuvalue))
+        legcoeffs(npts) = nuvalue;
+    elseif (isvector(nuvalue) && (length(nuvalue) == npts))
+        legcoeffs = nuvalue;
+    else
+        error('nuvalue argument must be a scalar or vector of length npts');
+    end
+    [B1,B2,B3] = se_legfilter_matrices(npts, legcoeffs);
     for j = 1:length(theta)
-    	Dx(:,:,j) = D1 * exp(-1i * theta(j)) + D2 + D3 * exp(1i * theta(j));
-        HDiff(:,:,j) = L1 * exp(-1i * theta(j)) + L2 + L3 * exp(1i * theta(j));
-        HDiff(:,:,j) = - (-1)^(nuorder/2) * nuvalue * HDiff(:,:,j)^(nuorder/2);
+    	HDiff(:,:,j) = B1 * exp(-1i * theta(j)) + B2 + B3 * exp(1i * theta(j));
+        HDiff(:,:,j) = (HDiff(:,:,j) - eye(npts-1)) / cfl;
+    end
+
+
+% With Boyd-Vandeven filter
+elseif (nutype == 4)
+    if (~isvector(nuvalue))
+        error('For Boyd-Vandeven filter nuvalue argument must be vector of length 2');
+    end
+    if (length(nuvalue) ~= 2)
+        error('For Boyd-Vandeven filter nuvalue argument must be vector of length 2');
+    end
+    [B1,B2,B3] = se_bvfilter_matrices(npts, nuvalue(1), nuorder, nuvalue(2));
+    for j = 1:length(theta)
+    	HDiff(:,:,j) = B1 * exp(-1i * theta(j)) + B2 + B3 * exp(1i * theta(j));
+        HDiff(:,:,j) = (HDiff(:,:,j) - eye(npts-1)) / cfl;
     end
 end
 

@@ -12,7 +12,6 @@ function M = se_advection_matrix_exact(npts, theta, nuorder, nuvalue, nutype)
 %    nuvalue - Non-dimensional diffusion coefficient
 %    nutype - 1 [default] (use laplacian operator for diffusion)
 %           - 2 (use derivative operator for diffusion)
-%             
 %
 % Outputs:
 %    M - Semi-discrete evolution matrix (npts-1 x npts-1 x length(theta))
@@ -72,13 +71,6 @@ if (nuorder == 0)
     	M(:,:,j) = M1 * exp(-1i * theta(j)) + M2 + M3 * exp(1i * theta(j));
     end
 
-% With derivative-operator diffusion
-elseif (nutype == 2)
-    for j = 1:length(theta)
-    	M(:,:,j) = M1 * exp(-1i * theta(j)) + M2 + M3 * exp(1i * theta(j));
-        M(:,:,j) = M(:,:,j) - (-1)^(nuorder/2) * nuvalue * M(:,:,j)^(nuorder);
-    end
-
 % With laplacian-operator diffusion
 elseif (nutype == 1)
     [D1,D2,D3] = se_laplacian_matrices(npts);
@@ -86,6 +78,13 @@ elseif (nutype == 1)
         D = D1 * exp(-1i * theta(j)) + D2 + D3 * exp(1i * theta(j));
     	M(:,:,j) = M1 * exp(-1i * theta(j)) + M2 + M3 * exp(1i * theta(j));
         M(:,:,j) = M(:,:,j) - (-1)^(nuorder/2) * nuvalue * D^(nuorder/2);
+    end
+    
+% With derivative-operator diffusion
+elseif (nutype == 2)
+    for j = 1:length(theta)
+    	M(:,:,j) = M1 * exp(-1i * theta(j)) + M2 + M3 * exp(1i * theta(j));
+        M(:,:,j) = M(:,:,j) - (-1)^(nuorder/2) * nuvalue * M(:,:,j)^(nuorder);
     end
 end
 

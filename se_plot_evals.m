@@ -3,7 +3,7 @@ function [theta_ext, pevals] = se_plot_evals(npts, nuorder, nuvalue, nutype, the
 % for the 1D non-dimensionalized advection equation with spectral element
 % discretization.  That is, the matrix M in equation dphi_j/dt = M phi_j.
 %
-% Syntax:  se_plot_evals(npts, nuorder, nuvalue, nutype)
+% Syntax:  se_plot_evals(npts, nuorder, nuvalue, nutype, theta_numpts)
 %
 % Inputs:
 %    npts - Order of the spectral element method
@@ -99,9 +99,9 @@ plot([0 width*pi], [0 width*pi], 'k-');
 hold on;
 plot(theta_ext, imag(pevals), 'k-', 'LineWidth', 2);
 hold off;
-set(gca, 'FontSize', 16);
-xlabel('Dimensionless wavenumber (k_e \Delta x_e)');
-ylabel('\omega_r');
+set(gca, 'FontSize', 14);
+xlabel('Non-dim. wavenumber (\theta)');
+title('Frequency (\omega_i)');
 
 plotwidth = max(max(ievals)) - min(min(ievals));
 axis([0 width*pi min(min(ievals))-0.05*plotwidth max(max(ievals))+0.05*plotwidth]);
@@ -113,9 +113,9 @@ axis2 = axes('Position', [0.58 0.2 0.4 0.65]);
 
 plot(theta_ext, real(pevals), 'k-', 'LineWidth', 2);
 %hold off;
-set(gca, 'FontSize', 16);
-xlabel('Dimensionless wavenumber (k_e \Delta x_e)');
-ylabel('\omega_i');
+set(gca, 'FontSize', 14);
+xlabel('Non-dim. wavenumber (\theta)');
+title('Diffusivity (\omega_r)');
 
 plotwidth = max(max(ievals)) - min(min(ievals));
 axis([0 width*pi min(min(revals))-0.05*plotwidth 0.1]);
